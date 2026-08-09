@@ -25,12 +25,16 @@ if hasattr(sys.stderr, "reconfigure"):
 
 
 ROOT = Path(__file__).resolve().parents[1]
+WORKSPACE_ROOT = ROOT.parent
 CATALOG_PATH = ROOT / "catalog.toml"
+POLICY_TEMPLATE_PATH = ROOT / "templates" / "PLUGIN_AGENTS.md"
 BUILD_ROOT = ROOT / ".build"
 PACKAGE_DIR = BUILD_ROOT / "packages"
 STAGING_DIR = BUILD_ROOT / "staging"
 DOCS_DIR = ROOT / "docs"
 SEMVER = re.compile(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$")
+POLICY_START = "<!-- NZO_RELEASE_POLICY_START -->"
+POLICY_END = "<!-- NZO_RELEASE_POLICY_END -->"
 
 
 class RepoError(RuntimeError):
@@ -90,6 +94,154 @@ def parse_version(value: str) -> tuple[int, int, int]:
     if not match:
         raise RepoError(f"Version invalide : {value}")
     return tuple(int(part) for part in match.groups())
+
+
+def read_utf8(path: Path) -> tuple[str, bool]:
+    data = path.read_bytes()
+    has_bom = data.startswith(b"\xef\xbb\xbf")
+    return data.decode("utf-8-sig" if has_bom else "utf-8"), has_bom
+
+
+def write_utf8(path: Path, text: str, *, bom: bool = False) -> None:
+    data = text.encode("utf-8")
+    path.write_bytes((b"\xef\xbb\xbf" if bom else b"") + data)
+
+
+def catalog_entry(package_id: str) -> dict[str, Any]:
+    matches = [entry for entry in load_catalog().get("extensions", []) if entry["id"] == package_id]
+    if not matches:
+        raise RepoError(f"Extension inconnue : {package_id}")
+    if len(matches) > 1:
+        raise RepoError(f"ID dupliqué dans le catalogue : {package_id}")
+    return matches[0]
+
+
+def bumped_version(current: str, level: str) -> str:
+    major, minor, patch = parse_version(current)
+    if level == "patch":
+        patch += 1
+    elif level == "minor":
+        minor, patch = minor + 1, 0
+    elif level == "major":
+        major, minor, patch = major + 1, 0, 0
+    else:
+        raise RepoError(f"Niveau de version inconnu : {level}")
+    return f"{major}.{minor}.{patch}"
+
+
+def replace_manifest_version(text: str, current: str, updated: str) -> str:
+    pattern = re.compile(r'(?m)^(\s*version\s*=\s*)["\']([^"\']+)["\'](\s*(?:#.*)?)$')
+    matching = [match for match in pattern.finditer(text) if match.group(2) == current]
+    if len(matching) != 1:
+        raise RepoError("La ligne de version du manifest est absente ou ambiguë")
+    target = matching[0]
+    replacement = f'{target.group(1)}"{updated}"{target.group(3)}'
+    return text[:target.start()] + replacement + text[target.end():]
+
+
+def replace_bl_info_version(text: str, updated: str) -> tuple[str, bool]:
+    block_match = re.search(r"(?ms)^bl_info\s*=\s*\{.*?^\}", text)
+    if block_match is None:
+        return text, False
+    block = block_match.group(0)
+    version_pattern = re.compile(
+        r'(?m)^(\s*["\']version["\']\s*:\s*)\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\)(\s*,?\s*)$'
+    )
+    match = version_pattern.search(block)
+    if match is None:
+        return text, False
+    version_tuple = ", ".join(updated.split("."))
+    replacement = f"{match.group(1)}({version_tuple}){match.group(2)}"
+    changed_block = block[:match.start()] + replacement + block[match.end():]
+    return text[:block_match.start()] + changed_block + text[block_match.end():], True
+
+
+def bump_extension(package_id: str, level: str, *, dry_run: bool = False) -> None:
+    entry = catalog_entry(package_id)
+    source = (ROOT / entry["source"]).resolve()
+    manifest_path = source / "blender_manifest.toml"
+    manifest = read_manifest(source)
+    current = str(manifest.get("version", ""))
+    if not SEMVER.fullmatch(current):
+        raise RepoError(f"Version non sémantique pour {package_id}: {current}")
+    updated = bumped_version(current, level)
+    manifest_text, manifest_bom = read_utf8(manifest_path)
+    updated_manifest = replace_manifest_version(manifest_text, current, updated)
+
+    entrypoint = source / entry.get("entrypoint", "__init__.py")
+    updated_entrypoint: str | None = None
+    synchronized = False
+    entrypoint_bom = False
+    if entrypoint.is_file():
+        entrypoint_text, entrypoint_bom = read_utf8(entrypoint)
+        updated_entrypoint, synchronized = replace_bl_info_version(entrypoint_text, updated)
+
+    print(f"{package_id}: {current} -> {updated} ({level})")
+    print(f"Archive attendue : {package_id}-{updated}.zip")
+    if synchronized:
+        print(f"bl_info synchronisé : {entrypoint}")
+    if dry_run:
+        print("Simulation uniquement : aucun fichier modifié.")
+        return
+
+    write_utf8(manifest_path, updated_manifest, bom=manifest_bom)
+    if synchronized and updated_entrypoint is not None:
+        write_utf8(entrypoint, updated_entrypoint, bom=entrypoint_bom)
+    print("Version mise à jour. Lancez ensuite : nzo-repo.cmd check")
+
+
+def policy_block(template: str, extension_ids: list[str]) -> str:
+    start = template.find(POLICY_START)
+    end = template.find(POLICY_END)
+    if start < 0 or end < start:
+        raise RepoError(f"Marqueurs de politique absents : {POLICY_TEMPLATE_PATH}")
+    end += len(POLICY_END)
+    return template[start:end].replace("{{EXTENSION_IDS}}", ", ".join(extension_ids))
+
+
+def project_root(source: Path) -> Path:
+    try:
+        relative = source.relative_to(WORKSPACE_ROOT)
+    except ValueError:
+        return source
+    if not relative.parts:
+        raise RepoError(f"Source de plugin invalide : {source}")
+    return WORKSPACE_ROOT / relative.parts[0]
+
+
+def sync_policy(*, dry_run: bool = False) -> None:
+    template, _ = read_utf8(POLICY_TEMPLATE_PATH)
+    projects: dict[Path, list[str]] = {}
+    for entry in load_catalog().get("extensions", []):
+        source = (ROOT / entry["source"]).resolve()
+        projects.setdefault(project_root(source), []).append(str(entry["id"]))
+
+    changed = 0
+    for project, extension_ids in sorted(projects.items(), key=lambda item: str(item[0]).lower()):
+        agent_path = project / "AGENTS.md"
+        block = policy_block(template, sorted(extension_ids))
+        existing: str | None = None
+        existing_bom = False
+        if agent_path.is_file():
+            existing, existing_bom = read_utf8(agent_path)
+            start = existing.find(POLICY_START)
+            end = existing.find(POLICY_END)
+            if start >= 0 and end >= start:
+                end += len(POLICY_END)
+                updated = existing[:start] + block + existing[end:]
+            else:
+                updated = existing.rstrip() + "\n\n" + block + "\n"
+        else:
+            updated = template.replace("{{EXTENSION_IDS}}", ", ".join(sorted(extension_ids)))
+        if existing == updated:
+            continue
+        changed += 1
+        action = "Mettrait à jour" if dry_run else "Mis à jour"
+        print(f"{action} : {agent_path}")
+        if not dry_run:
+            write_utf8(agent_path, updated, bom=existing_bom)
+    suffix = " à modifier" if dry_run else " synchronisé(s)"
+    print(f"{changed} fichier(s) AGENTS.md{suffix} sur {len(projects)} projet(s).")
 
 
 def find_blender() -> Path:
@@ -500,6 +652,7 @@ def add_extension(path_value: str) -> None:
     with CATALOG_PATH.open("a", encoding="utf-8", newline="\n") as handle:
         handle.write(f'\n[[extensions]]\nid = {json.dumps(package_id)}\nsource = {json.dumps(relative)}\n')
     print(f"Extension ajoutée : {package_id} -> {relative}")
+    sync_policy()
 
 
 def main() -> int:
@@ -507,6 +660,12 @@ def main() -> int:
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("check", help="Validate and build every registered extension")
     subparsers.add_parser("smoke", help="Install and enable every built extension in an isolated profile")
+    sync_parser = subparsers.add_parser("sync-policy", help="Install the release policy in every plugin project")
+    sync_parser.add_argument("--dry-run", action="store_true", help="Show changes without writing files")
+    bump_parser = subparsers.add_parser("bump", help="Increment an extension version and synchronize legacy metadata")
+    bump_parser.add_argument("id")
+    bump_parser.add_argument("level", choices=("patch", "minor", "major"))
+    bump_parser.add_argument("--dry-run", action="store_true", help="Show the new version without writing files")
     add_parser = subparsers.add_parser("add", help="Register a new extension source directory")
     add_parser.add_argument("path")
     publish_parser = subparsers.add_parser("publish", help="Build, upload immutable releases and publish the index")
@@ -522,6 +681,10 @@ def main() -> int:
             build_all()
         elif args.command == "smoke":
             smoke_all()
+        elif args.command == "sync-policy":
+            sync_policy(dry_run=args.dry_run)
+        elif args.command == "bump":
+            bump_extension(args.id, args.level, dry_run=args.dry_run)
         elif args.command == "add":
             add_extension(args.path)
         elif args.command == "publish":
