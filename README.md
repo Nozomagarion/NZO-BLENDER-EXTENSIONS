@@ -16,6 +16,7 @@ Dans Blender 4.2 ou plus récent :
 
 Sous Windows, double-cliquer sur `connect-nzo-repo.cmd` réalise cette opération pour toutes les versions
 Blender 4.2+ détectées. Il n'installe et n'active aucune extension automatiquement.
+Le script force l'accès en ligne uniquement pendant la connexion et la synchronisation.
 
 ## Maintenir le catalogue
 

@@ -37,16 +37,16 @@ foreach ($item in $executables) {
     }
 
     Write-Host "Configuration de $versionText"
-    $repositories = (& $item.FullName --command extension repo-list 2>&1 | Out-String)
+    $repositories = (& $item.FullName --online-mode --command extension repo-list 2>&1 | Out-String)
     if ($repositories -notmatch "(?m)^\s*$([regex]::Escape($repoId))\b") {
-        & $item.FullName --command extension repo-add --name "NZO Extensions" --url $RepositoryUrl $repoId
+        & $item.FullName --online-mode --command extension repo-add --name "NZO Extensions" --url $RepositoryUrl $repoId
         if ($LASTEXITCODE -ne 0) {
             Write-Warning "Impossible d'ajouter le dépôt à $($item.FullName)"
             continue
         }
     }
 
-    & $item.FullName --command extension sync
+    & $item.FullName --online-mode --command extension sync
     if ($LASTEXITCODE -eq 0) {
         $connected++
     } else {
@@ -59,4 +59,3 @@ if ($connected -eq 0) {
 }
 
 Write-Host "$connected installation(s) Blender connectée(s) au catalogue NZO."
-
