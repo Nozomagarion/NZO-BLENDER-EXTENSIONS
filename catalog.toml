@@ -1,0 +1,119 @@
+schema_version = "1.0.0"
+
+[repository]
+github = "Nozomagarion/NZO-BLENDER-EXTENSIONS"
+remote_id = "nzo_extensions"
+display_name = "NZO Extensions"
+index_url = "https://nozomagarion.github.io/NZO-BLENDER-EXTENSIONS/index.json"
+
+[[extensions]]
+id = "nzo_atom_array"
+source = "../NZO - (ATOM ARRAY)/atom_array"
+
+[[extensions]]
+id = "nzo_loft"
+source = "../NZO - (LOFT)/nzo_loft"
+
+[[extensions]]
+id = "nzo_texture_projector"
+source = "../NZO - 3D TEXTURE"
+
+[[extensions]]
+id = "nzo_after_render"
+source = "../NZO - AFTER RENDER"
+
+[[extensions]]
+id = "nzo_asset_audit"
+source = "../NZO - ASSET AUDIT/nzo_asset_audit"
+
+[[extensions]]
+id = "nzo_bpm_sync"
+source = "../NZO - BPM SYNC/bpm_sync"
+
+[[extensions]]
+id = "nzo_volume_builder_mesher"
+source = "../NZO - BUILDER REMESHER"
+
+[[extensions]]
+id = "nzo_camera_smoos"
+source = "../NZO - CAMERA SMOOS"
+
+[[extensions]]
+id = "nzo_cloner_mograph"
+source = "../NZO - CLONER MOGRAPH/nzo_cloner_mograph"
+
+[[extensions]]
+id = "nzo_dynamic_touch"
+source = "../NZO - DYNAMIC TOUCH/nzo_dynamic_touch"
+
+[[extensions]]
+id = "nzo_figma_bridge"
+source = "../NZO - FIGMA BLENDER/blender_extension"
+
+[[extensions]]
+id = "nzo_glitchy"
+source = "../NZO - Glitchy/nzo_glitchy"
+
+[[extensions]]
+id = "nzo_gradient"
+source = "../NZO - GRADIENT/nzo_gradient"
+
+[[extensions]]
+id = "nzo_hdri_lab"
+source = "../NZO - HDRI LAB/hdri_lab"
+
+[[extensions]]
+id = "nzo_import_anim"
+source = "../NZO - IMPORT ANIM/nzo_import_anim"
+
+[[extensions]]
+id = "nzo_logo_maker"
+source = "../NZO - LOGO MAKER/nzo_logo_maker"
+
+[[extensions]]
+id = "nzo_mix_textures"
+source = "../NZO - MIX TEXTURES/NZO_MIX_TEXTURES"
+
+[[extensions]]
+id = "nzo_motion_to_rig"
+source = "../NZO - MOTION TO RIG/nzo_motion_to_rig"
+
+[[extensions]]
+id = "nzo_multicam"
+source = "../NZO - MULTICAM/multicam_render"
+
+[[extensions]]
+id = "nzo_outliner_cleaner"
+source = "../NZO - OUTLINER CLEANER/blender_outliner_organizer"
+
+[[extensions]]
+id = "render_that_pls"
+source = "../NZO - RENDER THAT PLS"
+
+[[extensions]]
+id = "nzo_smart_retarget"
+source = "../NZO - RETARGET MASTER/nzo_smart_retarget"
+
+[[extensions]]
+id = "nzo_spotlight_hero"
+source = "../NZO - SpotLightHero-project/NZO-SpotLightHero-project"
+mode = "single_file"
+entrypoint = "nzo_spotlight_hero.py"
+extras = ["nzo_viewport_watermark.png"]
+
+[[extensions]]
+id = "nzo_transporter"
+source = "../NZO - THE TRANSPORTER/blender_extension"
+
+[[extensions]]
+id = "nzo_transporter_slave"
+source = "../NZO - THE TRANSPORTER/blender_slave_extension"
+
+[[extensions]]
+id = "nzo_ultra_cam"
+source = "../NZO - ULTRA CAM/nzo_ultra_cam"
+
+[[extensions]]
+id = "nzo_vibe"
+source = "../NZO - VIBE (Signal Blender)/VIBE"
+
