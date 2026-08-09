@@ -35,6 +35,9 @@ le droit d'écrire dans `Nozomagarion/NZO-BLENDER-EXTENSIONS`.
 Une combinaison ID/version publiée est immuable. Toute modification impose une nouvelle
 version dans `blender_manifest.toml`.
 
+Après un échec réseau survenu après la validation, `nzo-repo.cmd publish --reuse-build`
+reprend la publication avec les derniers ZIP construits par `check` ou `publish`.
+
 ## Contrat d'une extension
 
 - `blender_manifest.toml` et `__init__.py` à la racine du paquet ;

@@ -18,6 +18,12 @@ from pathlib import Path
 from typing import Any
 
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(errors="replace")
+
+
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG_PATH = ROOT / "catalog.toml"
 BUILD_ROOT = ROOT / ".build"
@@ -415,8 +421,11 @@ h1{{margin-bottom:4px}} h2{{margin:0}} small{{color:#aaa;font-weight:400}} code{
 <p>Ajoutez <code>index.json</code> comme dépôt distant dans Blender 4.2 ou plus récent.</p>{body}</body></html>"""
 
 
-def publish() -> None:
-    catalog, packages, blender = build_all()
+def publish(*, reuse_build: bool = False) -> None:
+    if reuse_build:
+        catalog, packages, blender = load_built_packages()
+    else:
+        catalog, packages, blender = build_all()
     repository = catalog["repository"]
     repo = repository["github"]
     run(["gh", "auth", "status"])
@@ -500,7 +509,12 @@ def main() -> int:
     subparsers.add_parser("smoke", help="Install and enable every built extension in an isolated profile")
     add_parser = subparsers.add_parser("add", help="Register a new extension source directory")
     add_parser.add_argument("path")
-    subparsers.add_parser("publish", help="Build, upload immutable releases and publish the index")
+    publish_parser = subparsers.add_parser("publish", help="Build, upload immutable releases and publish the index")
+    publish_parser.add_argument(
+        "--reuse-build",
+        action="store_true",
+        help="Reuse packages from the last successful check when retrying publication",
+    )
     args = parser.parse_args()
 
     try:
@@ -511,7 +525,7 @@ def main() -> int:
         elif args.command == "add":
             add_extension(args.path)
         elif args.command == "publish":
-            publish()
+            publish(reuse_build=args.reuse_build)
     except RepoError as exc:
         print(f"ERREUR: {exc}", file=sys.stderr)
         return 1
