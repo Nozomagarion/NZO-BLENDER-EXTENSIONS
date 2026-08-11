@@ -677,6 +677,8 @@ def publish(*, reuse_build: bool = False) -> None:
     previous_entries = list(previous_index.get("data", []))
 
     server_dir = BUILD_ROOT / "server"
+    if server_dir.exists():
+        shutil.rmtree(server_dir)
     server_dir.mkdir(parents=True)
     for package in packages:
         shutil.copy2(package.archive, server_dir / package.archive.name)
