@@ -23,18 +23,40 @@ Le script force l'accès en ligne uniquement pendant la connexion et la synchron
 Depuis PowerShell :
 
 ```powershell
+.\nzo-repo.cmd bump nzo_bpm_sync patch
+.\nzo-repo.cmd normalize-names --dry-run
 .\nzo-repo.cmd check
 .\nzo-repo.cmd smoke
 .\nzo-repo.cmd add "..\NZO - NOUVEAU PLUGIN\nzo_nouveau_plugin"
 .\nzo-repo.cmd publish
 ```
 
+La commande `bump` applique le versionnement sémantique depuis la version actuelle :
+
+- `patch` pour un correctif (`1.0.0` → `1.0.1`) ;
+- `minor` pour une fonctionnalité rétrocompatible (`1.0.0` → `1.1.0`) ;
+- `major` pour un changement incompatible (`1.0.0` → `2.0.0`).
+
+Elle modifie `blender_manifest.toml`, synchronise l'ancien `bl_info["version"]` s'il
+existe et annonce le nom du prochain ZIP. Le nom public de l'extension reste stable et
+ne contient pas la version. Utiliser `--dry-run` pour prévisualiser sans écrire.
+
+`sync-policy` installe ou actualise dans chaque projet un bloc `AGENTS.md` qui impose ces
+règles aux agents de code. La commande `add` l'exécute automatiquement pour les nouveaux
+plugins enregistrés.
+
+Tous les noms publics respectent la forme `NZO - NOM DU PLUGIN`, avec la partie après le
+tiret entièrement en majuscules. `normalize-names` corrige le manifest et l'ancien
+`bl_info`, puis applique automatiquement une version `patch` à chaque extension modifiée.
+`check` et `add` refusent ensuite tout nom qui ne respecte pas cette convention.
+
 `check` et `publish` exigent un Blender récent. Définir `NZO_BLENDER_EXE` pour imposer
 un exécutable précis. `publish` exige également `gh`, une session GitHub authentifiée et
 le droit d'écrire dans `Nozomagarion/NZO-BLENDER-EXTENSIONS`.
 
-Une combinaison ID/version publiée est immuable. Toute modification impose une nouvelle
-version dans `blender_manifest.toml`.
+Une combinaison ID/version publiée est immuable. Toute modification du paquet distribué
+impose une nouvelle version dans `blender_manifest.toml`. La publication externe reste
+volontaire : le changement de version ne lance jamais `publish` tout seul.
 
 Après un échec réseau survenu après la validation, `nzo-repo.cmd publish --reuse-build`
 reprend la publication avec les derniers ZIP construits par `check` ou `publish`.
