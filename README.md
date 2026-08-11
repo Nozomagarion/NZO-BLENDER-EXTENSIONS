@@ -58,6 +58,10 @@ Une combinaison ID/version publiée est immuable. Toute modification du paquet d
 impose une nouvelle version dans `blender_manifest.toml`. La publication externe reste
 volontaire : le changement de version ne lance jamais `publish` tout seul.
 
+L'index Blender expose uniquement la version courante de chaque extension. Les anciennes
+releases restent archivées sur GitHub, mais ne sont pas conservées dans `index.json`, afin
+d'éviter que Blender réinstalle une ancienne version à la place d'une mise à jour.
+
 Après un échec réseau survenu après la validation, `nzo-repo.cmd publish --reuse-build`
 reprend la publication avec les derniers ZIP construits par `check` ou `publish`.
 

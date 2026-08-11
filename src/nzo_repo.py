@@ -636,11 +636,6 @@ def ensure_release(repo: str, package: Package, previous_entries: list[dict[str,
     return f"https://github.com/{repo}/releases/download/{package.tag}/{filename}"
 
 
-def package_key(item: dict[str, Any]) -> tuple[str, str, tuple[str, ...]]:
-    platforms = tuple(sorted(item.get("platforms", [])))
-    return str(item.get("id", "")), str(item.get("version", "")), platforms
-
-
 def generate_html(index: dict[str, Any], title: str) -> str:
     rows = []
     for item in sorted(index.get("data", []), key=lambda value: (value.get("name", ""), value.get("version", ""))):
@@ -701,13 +696,13 @@ def publish(*, reuse_build: bool = False) -> None:
         item["archive_url"] = ensure_release(repo, package, previous_entries)
         new_entries.append(item)
 
-    merged = {package_key(item): item for item in previous_entries}
-    for item in new_entries:
-        merged[package_key(item)] = item
     final_index = {
         "version": generated.get("version", "v1"),
         "blocklist": generated.get("blocklist", []),
-        "data": list(merged.values()),
+        # Blender treats overlapping versions of the same package as conflicting
+        # candidates and may keep installing the first (older) entry. Releases stay
+        # immutable on GitHub, but the live index exposes current builds only.
+        "data": new_entries,
     }
 
     DOCS_DIR.mkdir(parents=True, exist_ok=True)
