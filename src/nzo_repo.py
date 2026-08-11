@@ -35,6 +35,7 @@ DOCS_DIR = ROOT / "docs"
 SEMVER = re.compile(r"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$")
 POLICY_START = "<!-- NZO_RELEASE_POLICY_START -->"
 POLICY_END = "<!-- NZO_RELEASE_POLICY_END -->"
+NAME_PREFIX = "NZO - "
 
 
 class RepoError(RuntimeError):
@@ -129,11 +130,29 @@ def bumped_version(current: str, level: str) -> str:
     return f"{major}.{minor}.{patch}"
 
 
+def normalized_extension_name(value: str) -> str:
+    suffix = re.sub(r"^NZO(?:\s*-\s*|\s+)", "", value.strip(), flags=re.IGNORECASE)
+    suffix = re.sub(r"\s+", " ", suffix).strip().upper()
+    if not suffix:
+        raise RepoError(f"Nom d'extension invalide : {value!r}")
+    return NAME_PREFIX + suffix
+
+
 def replace_manifest_version(text: str, current: str, updated: str) -> str:
     pattern = re.compile(r'(?m)^(\s*version\s*=\s*)["\']([^"\']+)["\'](\s*(?:#.*)?)$')
     matching = [match for match in pattern.finditer(text) if match.group(2) == current]
     if len(matching) != 1:
         raise RepoError("La ligne de version du manifest est absente ou ambiguë")
+    target = matching[0]
+    replacement = f'{target.group(1)}"{updated}"{target.group(3)}'
+    return text[:target.start()] + replacement + text[target.end():]
+
+
+def replace_manifest_name(text: str, current: str, updated: str) -> str:
+    pattern = re.compile(r'(?m)^(\s*name\s*=\s*)["\']([^"\']+)["\'](\s*(?:#.*)?)$')
+    matching = [match for match in pattern.finditer(text) if match.group(2) == current]
+    if len(matching) != 1:
+        raise RepoError("La ligne de nom du manifest est absente ou ambiguë")
     target = matching[0]
     replacement = f'{target.group(1)}"{updated}"{target.group(3)}'
     return text[:target.start()] + replacement + text[target.end():]
@@ -152,6 +171,33 @@ def replace_bl_info_version(text: str, updated: str) -> tuple[str, bool]:
         return text, False
     version_tuple = ", ".join(updated.split("."))
     replacement = f"{match.group(1)}({version_tuple}){match.group(2)}"
+    changed_block = block[:match.start()] + replacement + block[match.end():]
+    return text[:block_match.start()] + changed_block + text[block_match.end():], True
+
+
+def bl_info_name(text: str) -> str | None:
+    block_match = re.search(r"(?ms)^bl_info\s*=\s*\{.*?^\}", text)
+    if block_match is None:
+        return None
+    match = re.search(
+        r'(?m)^\s*["\']name["\']\s*:\s*["\']([^"\']+)["\']\s*,?\s*$',
+        block_match.group(0),
+    )
+    return match.group(1) if match else None
+
+
+def replace_bl_info_name(text: str, updated: str) -> tuple[str, bool]:
+    block_match = re.search(r"(?ms)^bl_info\s*=\s*\{.*?^\}", text)
+    if block_match is None:
+        return text, False
+    block = block_match.group(0)
+    pattern = re.compile(
+        r'(?m)^(\s*["\']name["\']\s*:\s*)["\'][^"\']+["\'](\s*,?\s*)$'
+    )
+    match = pattern.search(block)
+    if match is None:
+        return text, False
+    replacement = f'{match.group(1)}"{updated}"{match.group(2)}'
     changed_block = block[:match.start()] + replacement + block[match.end():]
     return text[:block_match.start()] + changed_block + text[block_match.end():], True
 
@@ -188,6 +234,47 @@ def bump_extension(package_id: str, level: str, *, dry_run: bool = False) -> Non
     if synchronized and updated_entrypoint is not None:
         write_utf8(entrypoint, updated_entrypoint, bom=entrypoint_bom)
     print("Version mise à jour. Lancez ensuite : nzo-repo.cmd check")
+
+
+def normalize_names(*, dry_run: bool = False) -> None:
+    changed = 0
+    for entry in load_catalog().get("extensions", []):
+        package_id = str(entry["id"])
+        source = (ROOT / entry["source"]).resolve()
+        manifest_path = source / "blender_manifest.toml"
+        manifest = read_manifest(source)
+        current_name = str(manifest.get("name", ""))
+        expected_name = normalized_extension_name(current_name)
+        current_version = str(manifest.get("version", ""))
+
+        entrypoint = source / entry.get("entrypoint", "__init__.py")
+        legacy_name: str | None = None
+        if entrypoint.is_file():
+            entrypoint_text, _ = read_utf8(entrypoint)
+            legacy_name = bl_info_name(entrypoint_text)
+        if current_name == expected_name and (legacy_name is None or legacy_name == expected_name):
+            continue
+
+        changed += 1
+        updated_version = bumped_version(current_version, "patch")
+        print(f"{package_id}: {current_name!r} -> {expected_name!r}; {current_version} -> {updated_version}")
+        if dry_run:
+            continue
+
+        bump_extension(package_id, "patch")
+        manifest_text, manifest_bom = read_utf8(manifest_path)
+        updated_manifest = replace_manifest_name(manifest_text, current_name, expected_name)
+        write_utf8(manifest_path, updated_manifest, bom=manifest_bom)
+        if entrypoint.is_file() and legacy_name is not None:
+            entrypoint_text, entrypoint_bom = read_utf8(entrypoint)
+            updated_entrypoint, synchronized = replace_bl_info_name(entrypoint_text, expected_name)
+            if not synchronized:
+                raise RepoError(f"Nom bl_info impossible à synchroniser : {entrypoint}")
+            write_utf8(entrypoint, updated_entrypoint, bom=entrypoint_bom)
+    if dry_run:
+        print(f"Simulation : {changed} extension(s) à normaliser.")
+    else:
+        print(f"{changed} extension(s) normalisée(s).")
 
 
 def policy_block(template: str, extension_ids: list[str]) -> str:
@@ -308,6 +395,10 @@ def validate_contract(entry: dict[str, Any], source: Path, manifest: dict[str, A
     version = str(manifest.get("version", ""))
     if not SEMVER.fullmatch(version):
         raise RepoError(f"Version non sémantique pour {expected_id}: {version}")
+    name = str(manifest.get("name", ""))
+    expected_name = normalized_extension_name(name)
+    if name != expected_name:
+        raise RepoError(f"Nom non conforme pour {expected_id}: {name!r}; attendu {expected_name!r}")
     minimum = str(manifest.get("blender_version_min", ""))
     if parse_version(minimum) < (4, 2, 0):
         raise RepoError(f"{expected_id} doit cibler Blender 4.2.0 ou plus")
@@ -645,6 +736,10 @@ def add_extension(path_value: str) -> None:
     package_id = str(manifest.get("id", ""))
     if not package_id:
         raise RepoError("Le manifest ne contient pas d'ID")
+    name = str(manifest.get("name", ""))
+    expected_name = normalized_extension_name(name)
+    if name != expected_name:
+        raise RepoError(f"Nom non conforme : {name!r}; attendu {expected_name!r}")
     catalog = load_catalog()
     if any(entry["id"] == package_id for entry in catalog.get("extensions", [])):
         raise RepoError(f"{package_id} est déjà enregistré")
@@ -660,6 +755,8 @@ def main() -> int:
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("check", help="Validate and build every registered extension")
     subparsers.add_parser("smoke", help="Install and enable every built extension in an isolated profile")
+    normalize_parser = subparsers.add_parser("normalize-names", help="Normalize public names and bump patch versions")
+    normalize_parser.add_argument("--dry-run", action="store_true", help="Show changes without writing files")
     sync_parser = subparsers.add_parser("sync-policy", help="Install the release policy in every plugin project")
     sync_parser.add_argument("--dry-run", action="store_true", help="Show changes without writing files")
     bump_parser = subparsers.add_parser("bump", help="Increment an extension version and synchronize legacy metadata")
@@ -681,6 +778,8 @@ def main() -> int:
             build_all()
         elif args.command == "smoke":
             smoke_all()
+        elif args.command == "normalize-names":
+            normalize_names(dry_run=args.dry_run)
         elif args.command == "sync-policy":
             sync_policy(dry_run=args.dry_run)
         elif args.command == "bump":

@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("check", "smoke", "sync-policy", "bump", "add", "publish")]
+    [ValidateSet("check", "smoke", "sync-policy", "normalize-names", "bump", "add", "publish")]
     [string]$Command = "check",
 
     [Parameter(Position = 1, ValueFromRemainingArguments = $true)]
